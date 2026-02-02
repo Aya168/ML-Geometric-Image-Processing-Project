@@ -1,0 +1,53 @@
+import torch
+import torch.nn as nn
+
+class EmbeddingOptimizer(nn.Module):
+    def __init__(self, input_dim=1024, output_dim=768, input_seq_len=257, output_seq_len=77):
+        super(EmbeddingOptimizer, self).__init__()
+        self.projection_layer = nn.Linear(input_dim, output_dim)
+        self.attention_pooling = nn.MultiheadAttention(output_dim, num_heads=8, batch_first=True)
+        self.mlp_fc1 = nn.Linear(output_dim, output_dim)
+        self.mlp_relu = nn.ReLU()
+        self.mlp_fc2 = nn.Linear(output_dim, output_dim)
+        self.mlp_fc3 = nn.Linear(output_dim, output_dim)
+        self.mlp_fc4 = nn.Linear(output_dim, output_dim)
+
+        self.output_seq_len = output_seq_len
+        self.input_seq_len = input_seq_len
+
+    def forward(self, x):
+        # Step 1: Project input embeddings from 1024 to 768 dimensions
+        x = self.projection_layer(x)  # Shape: [batch_size, 257, 768]
+
+        # Step 2: Attention pooling to reduce sequence length from 257 to 77
+        # Create a query tensor for pooling: [batch_size, 77, 768]
+        query = torch.randn(x.size(0), self.output_seq_len, x.size(-1), device=x.device, dtype=x.dtype)
+        x, _ = self.attention_pooling(query, x, x)
+
+        # Step 3: Apply the MLP block for further refinement
+        x = self.mlp_fc1(x)
+        x = self.mlp_relu(x)
+        x = self.mlp_fc2(x)
+        x = self.mlp_relu(x)
+        x = self.mlp_fc3(x)
+        x = self.mlp_relu(x)
+        x = self.mlp_fc4(x)
+
+        return x
+
+class AttentionPooling(nn.Module):
+    def __init__(self, input_dim, output_tokens):
+        super().__init__()
+        self.query = nn.Linear(input_dim, input_dim)
+        self.output_tokens = output_tokens
+
+    def forward(self, hidden_states):
+        # Compute attention scores
+        query = self.query(hidden_states[:, 0:1, :])  # Use CLS token as the query
+        attention_scores = torch.matmul(query, hidden_states.transpose(-1, -2)) / (hidden_states.size(-1) ** 0.5)
+        attention_weights = torch.nn.functional.softmax(attention_scores, dim=-1)
+
+        # Apply attention pooling
+        pooled_output = torch.matmul(attention_weights, hidden_states)  # Shape: [batch_size, 1, input_dim]
+        pooled_output = pooled_output.expand(-1, self.output_tokens, -1)  # Expand to match sequence length
+        return pooled_output
