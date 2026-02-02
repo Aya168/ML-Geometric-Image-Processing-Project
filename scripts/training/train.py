@@ -14,21 +14,31 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Script to fine-tune Stable Diffusion for InstructPix2Pix."""
+"""
+Training script for fine-tuning Stable Diffusion InstructPix2Pix with image-based conditioning.
 
+This script trains the Embedding Optimizer and UNet cross-attention layers to enable
+object insertion guided by reference images instead of text prompts.
+"""
+
+# Standard library imports
 import argparse
+import atexit
 import logging
 import math
 import os
 import shutil
+import sys
 from contextlib import nullcontext
 from pathlib import Path
-import atexit
 
+# Third-party imports
 import accelerate
 import datasets
+import diffusers
 import numpy as np
 import PIL
+import PIL.ImageOps
 import requests
 import torch
 import torch.nn as nn
@@ -41,28 +51,37 @@ from accelerate.utils import ProjectConfiguration, set_seed
 from datasets import load_dataset
 from huggingface_hub import create_repo, upload_folder
 from packaging import version
+from PIL import Image
 from torchvision import transforms
 from tqdm.auto import tqdm
-from transformers import CLIPVisionModel, CLIPVisionModelWithProjection, CLIPTextModel, CLIPTokenizer, CLIPFeatureExtractor, CLIPImageProcessor 
-from PIL import Image
+from transformers import (
+    CLIPFeatureExtractor,
+    CLIPImageProcessor,
+    CLIPVisionModel,
+    CLIPVisionModelWithProjection,
+)
 
-import diffusers
-from diffusers import AutoencoderKL, DDPMScheduler, StableDiffusionInstructPix2PixPipeline, UNet2DConditionModel, StableDiffusionImg2ImgPipeline, PaintByExamplePipeline
+from diffusers import (
+    AutoencoderKL,
+    DDPMScheduler,
+    StableDiffusionInstructPix2PixPipeline,
+    UNet2DConditionModel,
+)
 from diffusers.optimization import get_scheduler
 from diffusers.training_utils import EMAModel
 from diffusers.utils import check_min_version, deprecate, is_wandb_available
 from diffusers.utils.import_utils import is_xformers_available
 from diffusers.utils.torch_utils import is_compiled_module
-from diffusers.pipelines.paint_by_example import PaintByExampleImageEncoder
-import sys
+
+# Local imports
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../')))
+from src.models.embedding_optimizer import EmbeddingOptimizer
+from src.pipelines.pipeline_instruct_pix2pix_image import StableDiffusionInstructPix2PixImagePipeline
+
+if is_wandb_available():
+    import wandb
 
 atexit.register(logging.shutdown)
-
-
-# caution: path[0] is reserved for script path (or '' in REPL)
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../')))
-from src.pipelines.pipeline_instruct_pix2pix_image import StableDiffusionInstructPix2PixImagePipeline
-from src.models.embedding_optimizer import EmbeddingOptimizer
 
 if is_wandb_available():
     import wandb
@@ -705,30 +724,24 @@ def main():
     dataset_columns = DATASET_NAME_MAPPING.get(args.dataset_name, None)
     if args.object_image_column is None:
         original_image_column = dataset_columns[0] if dataset_columns is not None else column_names[2]
-        print("orignal col: ",original_image_column)
     else:
         original_image_column = args.original_image_column
-        print("wird orignal col: ",original_image_column)
         if original_image_column not in column_names:
             raise ValueError(
                 f"--original_image_column' value '{args.original_image_column}' needs to be one of: {', '.join(column_names)}"
             )
     if args.object_image_column is None:
         object_image_column = dataset_columns[1] if dataset_columns is not None else column_names[3]
-        print("object col: ",object_image_column)
     else:
         object_image_column = args.object_image_column
-        print("weird object col: ",object_image_column)
         if object_image_column not in column_names:
             raise ValueError(
                 f"--object_image_column' value '{args.object_image_column}' needs to be one of: {', '.join(column_names)}"
             )
     if args.target_image_column is None:
         target_image_column = dataset_columns[2] if dataset_columns is not None else column_names[5]
-        print("target col: ",target_image_column)
     else:
         target_image_column = args.target_image_column
-        print("weird target col: ",target_image_column)
         if target_image_column not in column_names:
             raise ValueError(
                 f"--target_image_column' value '{args.target_image_column}' needs to be one of: {', '.join(column_names)}"

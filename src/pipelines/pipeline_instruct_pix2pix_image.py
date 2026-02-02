@@ -29,24 +29,23 @@ Reference: Visually Guided Object Insertion Into Image (Tsach & Spira, 2024)
 # # limitations under the License.
 
 
-from diffusers.utils import (
-    PIL_INTERPOLATION,
-
-)
-
-from diffusers.pipelines.stable_diffusion import StableDiffusionPipelineOutput, StableDiffusionInstructPix2PixPipeline
-from diffusers.pipelines.stable_diffusion.safety_checker import StableDiffusionSafetyChecker
-import inspect
+# Standard library imports
+import os
 from typing import Any, Callable, Dict, List, Optional, Union
-from diffusers.pipelines.paint_by_example import PaintByExampleImageEncoder
 
+# Third-party imports
 import numpy as np
 import PIL.Image
 import torch
-from transformers import CLIPImageProcessor, CLIPTextModel, CLIPTokenizer, CLIPVisionModelWithProjection, CLIPVisionModel
-import torch.optim as optim
-import os
-from src.models.embedding_optimizer import EmbeddingOptimizer, AttentionPooling
+from diffusers.pipelines.stable_diffusion import (
+    StableDiffusionInstructPix2PixPipeline,
+    StableDiffusionPipelineOutput,
+)
+from diffusers.utils import PIL_INTERPOLATION
+from transformers import CLIPImageProcessor, CLIPVisionModelWithProjection
+
+# Local imports
+from src.models.embedding_optimizer import AttentionPooling, EmbeddingOptimizer
 
 # Copied from diffusers.pipelines.stable_diffusion.pipeline_stable_diffusion_img2img.retrieve_latents
 def retrieve_latents(
@@ -80,7 +79,7 @@ def prepare_image(image):
             image = image / 127.5 - 1.0  # Normalize image to [-1, 1] range
 
 
-        # Image as float32 aya check
+        # Convert to float32
         image = image.to(dtype=torch.float32)
 
     else:
@@ -164,7 +163,6 @@ class StableDiffusionInstructPix2PixImagePipeline(StableDiffusionInstructPix2Pix
         # Preprocess the image if not already a tensor
         if not isinstance(image, torch.Tensor):
             image = self.feature_extractor(images=image, return_tensors="pt").pixel_values
-            print("did it")
 
         # Resize if necessary
         if image.shape[-1] != 224 or image.shape[-2] != 224:
@@ -175,7 +173,7 @@ class StableDiffusionInstructPix2PixImagePipeline(StableDiffusionInstructPix2Pix
         self.image_encoder = self.image_encoder.to(device=device, dtype=dtype)
 
         # Get the image embeddings (hidden states)
-        image_embeddings = self.image_encoder(image).last_hidden_state  # Shape: [batch_size, 768]
+        image_embeddings = self.image_encoder(image).last_hidden_state  # Shape: [batch_size, 257, 1024]
 
         # Apply the Embedding Optimizer
         if not hasattr(self, "embedding_optimizer") or self.embedding_optimizer is None:
@@ -220,8 +218,6 @@ class StableDiffusionInstructPix2PixImagePipeline(StableDiffusionInstructPix2Pix
         # Apply dropout for classifier-free guidance
         dropout_prob = 0.05  # Use the same probability as in training
         image_embeddings = torch.nn.functional.dropout(image_embeddings, p=dropout_prob, training=False)
-        num_zero_vectors = (torch.norm(image_embeddings, p=2, dim=-1) == 0).sum()
-        print(f"Number of zero embeddings: {num_zero_vectors}")
 
         # For classifier-free guidance, prepare unconditional embeddings
         if do_classifier_free_guidance:
@@ -361,11 +357,9 @@ class StableDiffusionInstructPix2PixImagePipeline(StableDiffusionInstructPix2Pix
             raise ValueError("image input cannot be undefined.")
         
         # 1. Define call parameters
-        # batch_size = 1 if isinstance(prompt, str) else len(prompt) aya
         batch_size = 1
-        self.attention_pooling = AttentionPooling(input_dim=1024, output_tokens=77).to("cuda:0")
-
         device = self._execution_device
+        self.attention_pooling = AttentionPooling(input_dim=1024, output_tokens=77).to(device)
         # here guidance_scale is defined analog to the guidance weight w of equation (2)
         # of the Imagen paper: https://arxiv.org/pdf/2205.11487.pdf . guidance_scale = 1
         # corresponds to doing no classifier free guidance.
@@ -394,16 +388,6 @@ class StableDiffusionInstructPix2PixImagePipeline(StableDiffusionInstructPix2Pix
 
         # Encode the preprocessed object image
         image_embeddings = self._encode_image(object_image, device, num_images_per_prompt, do_classifier_free_guidance)
-        cosine_similarity = torch.cosine_similarity(image_embeddings, prompt_embeds, dim=-1)  # Shape: (1, 77)
-        similarity_value = torch.mean(cosine_similarity[0])
-        max_sim = torch.max(cosine_similarity[0])
-
-        print("mean sim:", similarity_value)
-        print("max sim: ", max_sim)
-# Calculate the average cosine similarity across all tokens (77)
-        average_cosine_similarity = cosine_similarity.mean().item()
-
-        print(average_cosine_similarity)
 
         original_image = prepare_image(image)
         height, width = original_image.shape[-2:]

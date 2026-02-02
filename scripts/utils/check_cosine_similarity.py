@@ -1,61 +1,113 @@
+"""
+Utility script to check cosine similarity between CLIP image and text embeddings.
+
+This script is useful for validating the alignment between image and text
+embedding spaces, which is important for the Embedding Optimizer.
+"""
+
 import torch
-from transformers import CLIPProcessor, CLIPModel, CLIPVisionModelWithProjection, CLIPTokenizer, CLIPTextModelWithProjection
-from PIL import Image
-import requests
 from io import BytesIO
+from typing import List
 
-# Load the models and processor
-vision_model = CLIPVisionModelWithProjection.from_pretrained("openai/clip-vit-large-patch14")
-text_model = CLIPTextModelWithProjection.from_pretrained("openai/clip-vit-large-patch14")
-processor = CLIPProcessor.from_pretrained("openai/clip-vit-large-patch14")
-tokenizer = CLIPTokenizer.from_pretrained("openai/clip-vit-large-patch14")
+import requests
+from PIL import Image
+from transformers import (
+    CLIPModel,
+    CLIPProcessor,
+    CLIPTextModelWithProjection,
+    CLIPTokenizer,
+    CLIPVisionModelWithProjection,
+)
 
-# Move models to device (CPU or GPU)
-device = "cuda" if torch.cuda.is_available() else "cpu"
-vision_model = vision_model.to(device)
-text_model = text_model.to(device)
 
-# 1. Load image from URL
-image_url = "https://www.mansfieldtexas.gov/ImageRepository/Document?documentId=6501"
-response = requests.get(image_url)
-image = Image.open(BytesIO(response.content))
-
-# Preprocess image (CLIP expects a certain size and format)
-inputs = processor(images=image, return_tensors="pt").to(device)
-
-# 2. Prepare text inputs (ground truth labels or description)
-text_inputs = ["dog in a park", "cat", "dog", "cat", "ant"]
-tokenized_text = tokenizer(text_inputs, padding=True, return_tensors="pt").to(device)
-
-# 3. Get image and text embeddings
-with torch.no_grad():
-    # Generate image embeddings
-    image_embeddings = vision_model(**inputs).image_embeds  # Shape: [1, 1, 768]
+def download_image_from_url(url: str) -> Image.Image:
+    """
+    Download an image from a URL.
     
-    # Generate text embeddings
-    text_outputs = text_model(**tokenized_text)
-    text_embeddings = text_outputs.text_embeds  # Shape: [5, 77, 768]
+    Args:
+        url: URL of the image
+        
+    Returns:
+        PIL Image object
+    """
+    response = requests.get(url)
+    return Image.open(BytesIO(response.content))
 
-print(f"Image embeddings shape: {image_embeddings.shape}")
-print(f"Text embeddings shape: {text_embeddings.shape}")
+
+def compute_cosine_similarity(
+    image_url: str,
+    text_inputs: List[str],
+    model_name: str = "openai/clip-vit-large-patch14",
+    similarity_threshold: float = 0.8
+) -> None:
+    """
+    Compute cosine similarity between image and text embeddings.
+    
+    Args:
+        image_url: URL of the image to analyze
+        text_inputs: List of text descriptions to compare
+        model_name: CLIP model name
+        similarity_threshold: Threshold for determining similarity
+    """
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    
+    # Load models
+    print(f"Loading CLIP models ({model_name})...")
+    vision_model = CLIPVisionModelWithProjection.from_pretrained(model_name).to(device)
+    text_model = CLIPTextModelWithProjection.from_pretrained(model_name).to(device)
+    processor = CLIPProcessor.from_pretrained(model_name)
+    tokenizer = CLIPTokenizer.from_pretrained(model_name)
+
+    # Load and preprocess image
+    print(f"Loading image from {image_url}...")
+    image = download_image_from_url(image_url)
+    inputs = processor(images=image, return_tensors="pt").to(device)
+
+    # Tokenize text inputs
+    tokenized_text = tokenizer(text_inputs, padding=True, return_tensors="pt").to(device)
+
+    # Get embeddings
+    print("Computing embeddings...")
+    with torch.no_grad():
+        # Generate image embeddings
+        image_embeddings = vision_model(**inputs).image_embeds  # Shape: [1, 1024]
+        
+        # Generate text embeddings
+        text_outputs = text_model(**tokenized_text)
+        text_embeddings = text_outputs.text_embeds  # Shape: [num_texts, 1024]
+
+    print(f"Image embeddings shape: {image_embeddings.shape}")
+    print(f"Text embeddings shape: {text_embeddings.shape}")
+
+    # Compute cosine similarity
+    image_embeddings = image_embeddings.squeeze(0)  # Shape: [1024]
+    cosine_similarities = torch.nn.functional.cosine_similarity(
+        image_embeddings.unsqueeze(0), text_embeddings, dim=1
+    )
+
+    # Print results
+    print("\nCosine Similarity Results:")
+    print("-" * 50)
+    for text, similarity in zip(text_inputs, cosine_similarities):
+        is_similar = similarity.item() > similarity_threshold
+        status = "✓ Similar" if is_similar else "✗ Not similar"
+        print(f"{text:30s}: {similarity.item():.4f} [{status}]")
+    
+    print(f"\nThreshold: {similarity_threshold}")
 
 
-# 5. Compute cosine similarity between image embeddings and text embeddings
-# Since image_embeddings is of shape [1, 1, 768], we need to remove the extra dimensions
-image_embeddings = image_embeddings.squeeze(1)  # Shape: [1, 768]
+def main():
+    """Main function with example usage."""
+    # Example configuration
+    image_url = "https://www.mansfieldtexas.gov/ImageRepository/Document?documentId=6501"
+    text_inputs = ["dog in a park", "cat", "dog", "cat", "ant"]
+    
+    compute_cosine_similarity(
+        image_url=image_url,
+        text_inputs=text_inputs,
+        similarity_threshold=0.8
+    )
 
-# Compute cosine similarity with both options
-cosine_similarity_cls = torch.nn.functional.cosine_similarity(image_embeddings, text_embeddings)
-cosine_similarity_mean = torch.nn.functional.cosine_similarity(image_embeddings, text_embeddings)
 
-# Print the results
-print(f"Cosine similarity using CLS token: {cosine_similarity_cls}")
-print(f"Cosine similarity using mean of token embeddings: {cosine_similarity_mean}")
-
-# Optionally: Choose a threshold to decide if the vectors are "similar"
-similarity_threshold = 0.8  # You can adjust this based on your task
-are_similar_cls = cosine_similarity_cls > similarity_threshold
-are_similar_mean = cosine_similarity_mean > similarity_threshold
-
-print(f"Are the image and text embeddings similar (CLS method)? {are_similar_cls}")
-print(f"Are the image and text embeddings similar (Mean method)? {are_similar_mean}")
+if __name__ == "__main__":
+    main()
