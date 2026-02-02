@@ -112,16 +112,16 @@ image2 = download_image(url2)
 
 
 num_inference_steps = 120
-image_guidance_scale = 1.3  #closer to og_image
-guidance_scale = 2  # closer to ob_image
+image_guidance_scale = 1.3  # Controls adherence to original image
+guidance_scale = 2  # Controls adherence to object image
 device = 'cuda:0'
 pipe.scheduler.set_timesteps(num_inference_steps, device='cuda:0')
 edited_image = pipe( 
    prompt="",
 #    image=image.to(device=device),
-#    ob_image =image2.to(device=device),
-    image= image,
-    ob_image = image2,
+#    object_image=image2.to(device=device),
+    image=image,
+    object_image=image2,
     # ip_adapter_image =image2,
    num_inference_steps=num_inference_steps,
    image_guidance_scale=image_guidance_scale,

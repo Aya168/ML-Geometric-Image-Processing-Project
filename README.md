@@ -77,7 +77,7 @@ pip install -r requirements.txt
 
 ### 1. Inference
 
-To run inference, use `scripts/inference/inference.py`. You will need to specify the URL or path to your input image (`image`) and the reference object image (`ob_image`).
+To run inference, use `scripts/inference/inference.py`. You will need to specify the URL or path to your input image (`image`) and the reference object image (`object_image`).
 
 ```python
 # Example usage inside scripts/inference/inference.py
@@ -89,7 +89,7 @@ url2 = "path_to_object_image.jpg"
 edited_image = pipe(
     prompt="",  # Prompt is replaced by object image embeddings
     image=image,
-    ob_image=image2,
+    object_image=image2,
     num_inference_steps=100,
     image_guidance_scale=1.5,  # Controls adherence to original image
     guidance_scale=7.0          # Controls adherence to object image
@@ -114,8 +114,8 @@ python scripts/training/train.py \
     --train_batch_size=16 \
     --num_train_epochs=100 \
     --learning_rate=1e-4 \
-    --val_image_url="<URL_TO_VAL_IMAGE>" \
-    --val_image_url2="<URL_TO_VAL_OBJECT>"
+    --validation_original_image_url="<URL_TO_ORIGINAL_IMAGE>" \
+    --validation_object_image_url="<URL_TO_OBJECT_IMAGE>"
 ```
 
 **Key Training Components:**

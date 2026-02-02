@@ -101,8 +101,8 @@ def log_validation(
     pipeline.set_progress_bar_config(disable=True)
 
     # run inference
-    original_image = download_image(args.val_image_url)
-    object_image =  download_image(args.val_image_url2)
+    original_image = download_image(args.validation_original_image_url)
+    object_image = download_image(args.validation_object_image_url)
     target_images = []
     if torch.backends.mps.is_available():
         autocast_ctx = nullcontext()
@@ -113,7 +113,7 @@ def log_validation(
         for _ in range(args.num_validation_images):
             target_images.append(
                 pipeline(
-                    ob_image=object_image,
+                    object_image=object_image,
                     image=original_image,
                     num_inference_steps=20,
                     image_guidance_scale=1.5,
@@ -197,13 +197,13 @@ def parse_args():
         help="The column of the dataset containing the edit instruction.",
     )
     parser.add_argument(
-        "--val_image_url",
+        "--validation_original_image_url",
         type=str,
         default=None,
         help="URL to the original image that you would like to edit (used during inference for debugging purposes).",
     )
     parser.add_argument(
-        "--val_image_url2",
+        "--validation_object_image_url",
         type=str,
         default=None,
         help="URL to the object image that you would like to use for edit (used during inference for debugging purposes).",
@@ -1062,8 +1062,8 @@ def main():
 
         if accelerator.is_main_process:
             if (
-                (args.val_image_url is not None)
-                and (args.val_image_url2 is not None)
+                (args.validation_original_image_url is not None)
+                and (args.validation_object_image_url is not None)
                 and (epoch % args.validation_epochs == 0)
             ):
                 if args.use_ema:
@@ -1125,7 +1125,7 @@ def main():
                 ignore_patterns=["step_*", "epoch_*"],
             )
 
-        if (args.val_image_url is not None) and (args.validation_prompt is not None):
+        if (args.validation_original_image_url is not None) and (args.validation_object_image_url is not None):
             log_validation(
                 pipeline,
                 args,

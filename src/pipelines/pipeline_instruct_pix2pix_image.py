@@ -106,7 +106,7 @@ class StableDiffusionInstructPix2PixImagePipeline(StableDiffusionInstructPix2Pix
         >>> pipe = StableDiffusionInstructPix2PixImagePipeline.from_pretrained("model_path")
         >>> edited_image = pipe(
         ...     image=original_image,
-        ...     ob_image=object_image,
+        ...     object_image=object_image,
         ...     num_inference_steps=100,
         ...     guidance_scale=7.0,
         ...     image_guidance_scale=1.5
@@ -253,7 +253,7 @@ class StableDiffusionInstructPix2PixImagePipeline(StableDiffusionInstructPix2Pix
         return_dict: bool = True,
         callback: Optional[Callable[[int, int, torch.FloatTensor], None]] = None,
         callback_steps: int = 1,
-        ob_image = None,
+        object_image: Optional[Union[torch.FloatTensor, PIL.Image.Image]] = None,
     ):
         r"""
         Function invoked when calling the pipeline for generation.
@@ -313,6 +313,10 @@ class StableDiffusionInstructPix2PixImagePipeline(StableDiffusionInstructPix2Pix
             callback_steps (int, optional, defaults to 1):
                 The frequency at which the callback function will be called. If not specified, the callback will be
                 called at every step.
+            object_image (PIL.Image.Image or torch.Tensor, optional):
+                The reference object image to be inserted into the original image. This replaces the text prompt
+                as the conditioning mechanism. The image will be encoded using CLIP and transformed through the
+                Embedding Optimizer to match the textual embedding space.
 
         Examples:
 
@@ -380,13 +384,16 @@ class StableDiffusionInstructPix2PixImagePipeline(StableDiffusionInstructPix2Pix
             negative_prompt_embeds=negative_prompt_embeds,
         )
 
-        if not isinstance(ob_image, torch.Tensor):
-            ob_image = self.feature_extractor(images=ob_image, return_tensors="pt").pixel_values
-        if ob_image.shape[-1] != 224 or ob_image.shape[-2] != 224:
-            ob_image = torch.nn.functional.interpolate(ob_image, size=(224, 224))
+        if object_image is None:
+            raise ValueError("object_image input cannot be undefined.")
+            
+        if not isinstance(object_image, torch.Tensor):
+            object_image = self.feature_extractor(images=object_image, return_tensors="pt").pixel_values
+        if object_image.shape[-1] != 224 or object_image.shape[-2] != 224:
+            object_image = torch.nn.functional.interpolate(object_image, size=(224, 224))
 
-# Encode the preprocessed image
-        image_embeddings = self._encode_image(ob_image, device, num_images_per_prompt, do_classifier_free_guidance)
+        # Encode the preprocessed object image
+        image_embeddings = self._encode_image(object_image, device, num_images_per_prompt, do_classifier_free_guidance)
         cosine_similarity = torch.cosine_similarity(image_embeddings, prompt_embeds, dim=-1)  # Shape: (1, 77)
         similarity_value = torch.mean(cosine_similarity[0])
         max_sim = torch.max(cosine_similarity[0])
@@ -398,16 +405,16 @@ class StableDiffusionInstructPix2PixImagePipeline(StableDiffusionInstructPix2Pix
 
         print(average_cosine_similarity)
 
-        og_image = prepare_image(image)
-        height, width = og_image.shape[-2:]
+        original_image = prepare_image(image)
+        height, width = original_image.shape[-2:]
 
         # 4. set timesteps
         self.scheduler.set_timesteps(num_inference_steps, device=device)
         timesteps = self.scheduler.timesteps
 
-        #5. Prepare Image latents
+        # 5. Prepare Image latents
         image_latents = self.prepare_image_latents(
-            og_image,
+            original_image,
             batch_size,
             num_images_per_prompt,
             image_embeddings.dtype,
