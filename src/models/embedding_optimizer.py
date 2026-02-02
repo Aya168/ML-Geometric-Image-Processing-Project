@@ -1,3 +1,19 @@
+"""
+Embedding Optimizer Module
+
+This module projects CLIP image embeddings into the textual embedding space of Stable Diffusion.
+It enables image-based conditioning by translating visual features into text-compatible embeddings.
+
+Architecture:
+1. Input: CLIP image embeddings [batch_size, 257, 1024]
+2. Projection Layer: 1024 → 768 dimensions
+3. Attention Pooling: 257 → 77 sequence length
+4. MLP Refinement: Four FC layers with ReLU activations
+5. Output: Text-compatible embeddings [batch_size, 77, 768]
+
+Reference: Visually Guided Object Insertion Into Image (Tsach & Spira, 2024)
+"""
+
 import torch
 import torch.nn as nn
 
@@ -16,6 +32,15 @@ class EmbeddingOptimizer(nn.Module):
         self.input_seq_len = input_seq_len
 
     def forward(self, x):
+        """
+        Forward pass through the Embedding Optimizer.
+        
+        Args:
+            x: Input CLIP image embeddings of shape [batch_size, 257, 1024]
+            
+        Returns:
+            Output embeddings of shape [batch_size, 77, 768] compatible with Stable Diffusion
+        """
         # Step 1: Project input embeddings from 1024 to 768 dimensions
         x = self.projection_layer(x)  # Shape: [batch_size, 257, 768]
 
@@ -25,6 +50,7 @@ class EmbeddingOptimizer(nn.Module):
         x, _ = self.attention_pooling(query, x, x)
 
         # Step 3: Apply the MLP block for further refinement
+        # Four-layer MLP as per final architecture (improved from initial 2-layer design)
         x = self.mlp_fc1(x)
         x = self.mlp_relu(x)
         x = self.mlp_fc2(x)

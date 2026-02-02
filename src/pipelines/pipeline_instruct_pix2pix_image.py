@@ -1,3 +1,19 @@
+"""
+Stable Diffusion InstructPix2Pix Image Pipeline
+
+This pipeline extends InstructPix2Pix to support image-based conditioning instead of text prompts.
+It uses an Embedding Optimizer to convert CLIP image embeddings into text-compatible embeddings
+for the diffusion model, enabling object insertion guided by reference images rather than text.
+
+Key Features:
+- Image-based object insertion without requiring masks
+- Uses CLIPVisionModel for encoding object images
+- Embedding Optimizer bridges image and text embedding spaces
+- Maintains InstructPix2Pix's quality and realism
+
+Reference: Visually Guided Object Insertion Into Image (Tsach & Spira, 2024)
+"""
+
 # # Copyright 2023 The InstructPix2Pix Authors and The HuggingFace Team. All rights reserved.
 # #
 # # Licensed under the Apache License, Version 2.0 (the "License");
@@ -78,6 +94,24 @@ def prepare_image(image):
     return image
 
 class StableDiffusionInstructPix2PixImagePipeline(StableDiffusionInstructPix2PixPipeline):
+    """
+    Pipeline for image-guided editing using InstructPix2Pix architecture.
+    
+    This pipeline replaces text prompts with object images for conditioning.
+    The object image is encoded using CLIP, then transformed through an Embedding
+    Optimizer to match the format expected by the UNet's cross-attention layers.
+    
+    Example:
+        >>> from src.pipelines.pipeline_instruct_pix2pix_image import StableDiffusionInstructPix2PixImagePipeline
+        >>> pipe = StableDiffusionInstructPix2PixImagePipeline.from_pretrained("model_path")
+        >>> edited_image = pipe(
+        ...     image=original_image,
+        ...     ob_image=object_image,
+        ...     num_inference_steps=100,
+        ...     guidance_scale=7.0,
+        ...     image_guidance_scale=1.5
+        ... ).images[0]
+    """
 
 
     

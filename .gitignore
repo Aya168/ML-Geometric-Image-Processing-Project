@@ -1,0 +1,77 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Model checkpoints and outputs
+checkpoints/
+checkpoint-*/
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+emb_opt.pt
+
+# Output directories
+edited_images/
+outputs/
+logs/
+runs/
+wandb/
+
+# Dataset cache
+.cache/
+datasets/
+*.h5
+*.hdf5
+
+# Environment variables
+.env
+.env.local
+
+# Hugging Face
+.huggingface/
+
+# Large files
+*.zip
+*.tar.gz
+*.tar
+
+# OS
+Thumbs.db
+.DS_Store
+
